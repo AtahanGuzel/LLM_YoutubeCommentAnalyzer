@@ -1,0 +1,449 @@
+  ---
+  Checkpoint 1 Report
+
+  Tasks completed:
+
+  ┌───────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Task  │                                               File(s) created / modified                                                │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1     │ app/utils/groq_client.py — added PREPROCESSING_MODEL constant                                                           │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 2     │ pytest.ini — created with testpaths = tests/local, pythonpath = .                                                       │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 3     │ tests/live/__init__.py — created empty                                                                                  │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4     │ tests/live/test_checkpoint{1,2,3,4}.py — created as empty placeholders                                                  │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5     │ app/pipeline/prompts/__init__.py — created empty                                                                        │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 6     │ app/pipeline/prompts/preprocessing.py — created with 5-step prompt + JSON schema                                        │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 7     │ app/pipeline/prompts/extraction.py — created with {primary_product} placeholder and all three label definitions         │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 8     │ app/pipeline/prompts/evaluation.py — created with Eval 1 + Eval 2 schemas, evidence-before-scores instruction, position │
+  │       │  bias instruction, and three five-point rubrics                                                                         │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 9–10  │ app/pipeline/stage1_preprocessor.py — implemented classify_video (API call + validation) and apply_decision_gate (all   │
+  │       │ three outcome branches)                                                                                                 │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 11–12 │ app/main.py — implemented run_pipeline (Path A + Path B) and POST /analyze endpoint                                     │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 13    │ tests/live/test_checkpoint1.py — populated with smoke test using rng_yUSwrgU                                            │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ —     │ app/pipeline/prompts/preprocessing.py — prompt corrected to recognize reviews as is_promotion: true                     │
+  ├───────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ —     │ CLAUDE.md — decisions log updated                                                                                       │
+  └───────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  YouTube quota units consumed (Phase 2 running total):
+
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───────┐
+  │                                                          Call                                                           │ Units │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Video ID searches (not found: b1psJoJLDcA, F7rYAjYYUok, AWt5PtCEdwY, kzxTIQFbh_I, xqyUdNxWazA, XHTrLYShBRQ)             │ 6     │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Metadata lookups (found: 0X0Jm8QValY, V_olg8uGDBY, 0kX9GaReHyQ, d9JblG0O3Io, jrz4HJTs8PU, APmK6tr4wF4, y5Sg_xZskiI,     │ 10    │
+  │ rng_yUSwrgU, fN6q3RdTbsY, nfHRMqqO578)                                                                                  │       │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Classification debug calls (metadata re-fetch inside classify_video for 0X0Jm8QValY, V_olg8uGDBY, rng_yUSwrgU)          │ 3     │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Comment page fetches for comment-count checks (0X0Jm8QValY was skipped, but V_olg8uGDBY, 0kX9GaReHyQ, jrz4HJTs8PU,      │ 8     │
+  │ APmK6tr4wF4, y5Sg_xZskiI, rng_yUSwrgU, fN6q3RdTbsY, nfHRMqqO578)                                                        │       │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Smoke test run (1 metadata + 1 comment page)                                                                            │ 2     │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Phase 2 total                                                                                                           │ 29    │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴───────┘
+
+  Deviations from plan:
+  - pytest.ini required pythonpath = . in addition to testpaths to resolve app module imports — minor infrastructure adjustment.
+  - Pre-processing prompt required a clarifying note (per your instruction) bridging step 3 to is_promotion: true; without it the model
+   correctly distinguished "review" from "promotion" by name but rejected valid input.
+  - Video ID discovery required significantly more metadata calls than anticipated due to unreliable video IDs from web search results
+  and low comment counts on official brand channels.
+
+  Unresolved questions:
+  - None. All done conditions met.
+
+✻ Churned for 4m 31s
+
+
+
+
+
+⏺ ---
+  [CHECKPOINT 2] Report
+
+  What was built
+
+  ┌──────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Task │                                                 File(s) modified/created                                                 │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 14   │ app/pipeline/stage4_extraction.py — chunk_comments (25-per-chunk with remainder merged into final chunk)                 │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 15   │ app/pipeline/stage4_extraction.py — process_chunk_with_retry (max_retries=3, exponential backoff 1s/2s/4s on             │
+  │      │ RateLimitError, 1s on InternalServerError/APITimeoutError, returns None on exhaustion)                                   │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 16   │ app/pipeline/stage4_extraction.py — extract_labels (orchestrates all chunks, discards None results, returns              │
+  │      │ (labeled_comments, processed_count))                                                                                     │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 17   │ app/pipeline/stage4_extraction.py — apply_post_extraction_threshold (same thresholds as Stage 3; returns tuple on        │
+  │      │ success, error dict on ≤50)                                                                                              │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 18   │ app/pipeline/stage5_aggregation.py — compute_sentiment_distribution (target comments only, raw counts + percentages      │
+  │      │ summing to 100%)                                                                                                         │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 19   │ app/pipeline/stage5_aggregation.py — weighted_score + rank_pain_points (top 5 by mention_count + log(likes + 1), empty   │
+  │      │ list when none)                                                                                                          │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 20   │ app/pipeline/stage5_aggregation.py — count_competitors (raw comment count, ≥10 threshold, empty list when none qualify)  │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 21   │ app/main.py — run_pipeline extended to call stages 4→5 for both Path A and Path B; result now includes                   │
+  │      │ sentiment_distribution, pain_points, competitors                                                                         │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 22   │ tests/live/test_checkpoint2.py — smoke test asserts sentiment_distribution (positive/negative/neutral keys), pain_points │
+  │      │  list, competitors list                                                                                                  │
+  └──────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Smoke test result: 1 passed in 31.20s
+
+  ---
+  YouTube quota units consumed (Phase 2 running total)
+
+  ┌─────────────────────────────────────────────────────────────────────────────────┬───────┐
+  │                                      Call                                       │ Units │
+  ├─────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Session 1 total (Tasks 1–13)                                                    │ 29    │
+  ├─────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Test run 1 — KeyError in prompt formatting, stages 0–3 completed before failure │ 2     │
+  ├─────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Test run 2 — parsing failure (processed_count=0), stages 0–3 completed          │ 2     │
+  ├─────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Test run 3 — same after partial fix attempt                                     │ 2     │
+  ├─────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Test run 4 — full success (Checkpoint 2 passing smoke test)                     │ 2     │
+  ├─────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ Phase 2 running total                                                           │ 37    │
+  └─────────────────────────────────────────────────────────────────────────────────┴───────┘
+
+  ---
+  Deviations from plan
+
+  1. chunk_comments initial implementation incorrect. The standard range(0, n, 25) slicing produces a dangling sub-25 final chunk (e.g.
+   [25,25,25,1] for 76 items). Done condition requires the remainder to be absorbed into the final chunk ([25,25,26]). Fixed with
+  explicit n_complete - 1 leading chunks + one merged final chunk.
+  2. EXTRACTION_PROMPT.format(primary_product=...) raises KeyError. The extraction prompt body contains literal JSON { and } (schema
+  example), which Python's .format() treats as placeholders. Fixed with .replace("{primary_product}", primary_product).
+  3. Extraction model returns text preamble + markdown-fenced JSON. Llama 4 Scout via Groq prefaces its response with "Here is the JSON
+   output:\n\n\n[...]\n\n\nLet me explain..." rather than outputting a bare JSON array. json.loads() on the raw text fails, causing all
+   chunks to return None. Fixed with a re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL) extraction, with a fallback [...]
+  substring search for fence-free text. One debug Groq call was made to confirm the response format before fixing.
+
+  ---
+  Unresolved question
+
+  like_count is not propagated to labeled comments. rank_pain_points calls comment.get("like_count", 0) on labeled comments, but the
+  extraction model only returns comment_id, comment_type, sentiment, pain_points, competitor_mentions. As implemented, all labeled
+  comments have like_count=0, so pain point ranking is purely by mention count (mention_count + log(1) = mention_count). The brief's
+  weighted score formula implies like_count should come from the original fetch — a join of labeled outputs back to original comments
+  by comment_id. This join is not specified in the task plan. Should it be added before Session 3, or deferred?
+
+✻ Crunched for 15m 40s
+
+
+
+
+  ---
+  [CHECKPOINT 3] Report
+
+  What was built
+
+  ┌──────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Task │                                                 File(s) modified/created                                                 │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 22b  │ app/pipeline/stage4_extraction.py — added like_count join in extract_labels: after extraction, builds a comment_id →     │
+  │      │ like_count lookup from the original comments list and enriches every labeled comment dict                                │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 23   │ app/pipeline/stage6_sampling.py — select_stratified_sample: up to 5 per sentiment bucket, 3 per pain point (top 5), 3    │
+  │      │ per competitor, 5 random; deduplicates by comment_id across all buckets                                                  │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │      │ app/pipeline/stage7_evaluation.py — evaluate(): async function that formats sample (text + label before aggregated       │
+  │ 24   │ output for position bias mitigation), calls EVALUATION_MODEL, extracts JSON from fences, validates both label_quality    │
+  │      │ and output_quality keys, raises EvaluationResponseError on malformed output                                              │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 25   │ app/pipeline/stage7_evaluation.py — _log_label_quality(): writes label_quality block to logger at INFO level             │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 26   │ app/pipeline/stage7_evaluation.py — run_evaluation(): calls evaluate(), routes label_quality to log, returns             │
+  │      │ {"output_quality": ...} only                                                                                             │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 27   │ app/pipeline/stage8_confidence.py — compute_confidence(): exact check order — loss_ratio > 0.25 → Low; relevant_count <  │
+  │      │ 30 → Low; avg ≥ 4.0 → High; avg ≥ 2.5 → Medium; else → Low                                                               │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 28   │ app/pipeline/stage8_confidence.py — find_score_one_criteria(): returns list of criterion names where score == 1          │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 29   │ app/main.py — run_pipeline extended to call stages 6 → 7 → 8; result now includes confidence_tier, confidence_warning,   │
+  │      │ score_one_warnings, output_quality                                                                                       │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 30   │ tests/live/test_checkpoint3.py — smoke test: asserts confidence_tier is one of High/Medium/Low, evidence strings present │
+  │      │  for all three criteria, label_quality absent from return value                                                          │
+  └──────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Smoke test result: 1 passed in 25.07s
+
+  ---
+  Confirmation: label_quality routing
+
+  label_quality appears in the application log at INFO level (app.pipeline.stage7_evaluation INFO Eval 1 — label_quality:
+  {"evaluated_count": 21, "passed": 21, "failed": 0, "failures": []}) and is absent from the run_pipeline return value (label_quality
+  in result: False).
+
+  ---
+  YouTube quota units consumed (Phase 2 running total)
+
+  ┌─────────────────────────────┬───────┐
+  │            Call             │ Units │
+  ├─────────────────────────────┼───────┤
+  │ Sessions 1–2 running total  │ 37    │
+  ├─────────────────────────────┼───────┤
+  │ Checkpoint 3 smoke test run │ 2     │
+  ├─────────────────────────────┼───────┤
+  │ Phase 2 running total       │ 39    │
+  └─────────────────────────────┴───────┘
+
+  Full pipeline run count: 6 total (2 Checkpoint 1 + 3 partial Checkpoint 2 + 1 Checkpoint 2 pass + 1 Checkpoint 3 pass). 1 remaining
+  within the 5–8 budget.
+
+  ---
+  Deviations from plan
+
+  None. All done conditions were met on first attempt for every task in this session.
+
+  ---
+  Unresolved questions
+
+  None from this session. The like_count question from Session 2 was resolved by Task 22b.
+
+
+⏺ ---
+  [CHECKPOINT 4] Report
+
+  What was built
+
+  ┌──────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Task │                                                 File(s) modified/created                                                 │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 31   │ app/pipeline/stage9_pdf.py — created with generate_pdf function, SFNS/ArialBold font registration, _make_styles, and     │
+  │      │ _build_header (7-field header table; ⚠ indicator when processed_count < comments_fetched; quality_mode capitalized)      │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 32   │ app/pipeline/stage9_pdf.py — added _build_confidence_banner: no banner for High; yellow-boxed banner with exact Medium   │
+  │      │ message for Medium; red-boxed banner with exact Low message for Low                                                      │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 33   │ app/pipeline/stage9_pdf.py — added _build_chart1_sentiment: Matplotlib donut chart, positive/neutral/negative in         │
+  │      │ green/gray/red, center label "{n} relevant comments", legend with percentages                                            │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 34   │ app/pipeline/stage9_pdf.py — added _build_chart2_pain_points: horizontal bar chart in descending weighted score order,   │
+  │      │ "mentioned in N comments" label on each bar; fallback text "No pain points identified in the analyzed comments."         │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 35   │ app/pipeline/stage9_pdf.py — added _build_chart3_competitors: horizontal bar chart, vertical reference line at x=10;     │
+  │      │ fallback text "No competitors meeting the minimum threshold (10 mentions) were identified."                              │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 36   │ app/pipeline/stage9_pdf.py — added _build_scorecard: confidence tier displayed prominently; per-criterion rows with ✓    │
+  │      │ (score ≥4) or ⚠ (score ≤3) and evidence string; no raw numeric scores                                                    │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 37   │ app/pipeline/stage9_pdf.py — added _build_footer with extraction model, evaluation model, timestamp, and fetch           │
+  │      │ parameters                                                                                                               │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 38   │ app/main.py — imported generate_pdf, added stage9 call after stage8 with all pipeline outputs; creates output/ dir if    │
+  │      │ needed; writes report_{video_id}_{timestamp}.pdf; POST /analyze returns FileResponse with application/pdf                │
+  ├──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 39   │ tests/live/test_checkpoint4.py — populated with smoke test asserting non-empty PDF, correct filename pattern, correct    │
+  │      │ output directory; 1 passed in 23.49s                                                                                     │
+  └──────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  Full pipeline produces a readable PDF end-to-end via POST /analyze: Yes. The smoke test ran the full pipeline against rng_yUSwrgU
+  (iPhone 17 MKBHD review) and produced report_rng_yUSwrgU_20260624_190619.pdf (134,138 bytes) in output/. Filename matches
+  report_{video_id}_{timestamp}.pdf.
+
+  ---
+  YouTube quota units consumed across all Phase 2 smoke test runs
+
+  ┌────────────────────────────┬───────┐
+  │            Run             │ Units │
+  ├────────────────────────────┼───────┤
+  │ Sessions 1–3 running total │ 39    │
+  ├────────────────────────────┼───────┤
+  │ Checkpoint 4 smoke test    │ 2     │
+  ├────────────────────────────┼───────┤
+  │ Phase 2 running total      │ 41    │
+  └────────────────────────────┴───────┘
+
+  ---
+  Deviations from plan
+
+  1. Font choice. The brief uses ⚠ (U+26A0) and ✓ (U+2713) as literal Unicode characters. /System/Library/Fonts/Supplemental/Arial
+  Unicode.ttf does not contain the glyph for U+26A0 (verified via charToGlyph). Switched to /System/Library/Fonts/SFNS.ttf (SF Pro)
+  which contains both symbols. The SFNS CMap in the generated PDF correctly maps glyph byte <02> → <26A0> (⚠) and <01> → <2713> (✓).
+  2. relevant_count computed once before stage 9 (minor cleanup: removed a duplicate computation that was left from stage 8's inline
+  calculation).
+
+  ---
+  Unresolved questions
+
+  None. All done conditions were met on first attempt for every task in this session.
+
+
+
+
+
+
+⏺ ---
+  [PHASE 2 COMPLETE] Report
+
+  Phase 2 goal check
+
+  ▎ "All 9 pipeline stages are wired together end-to-end across
+  ▎  four sequential checkpoints, draft prompts are in place,
+  ▎ and the pipeline produces a real PDF output by end of
+  ▎ phase."
+
+  All items covered by prior checkpoint reports and this
+  session. Goal met.
+
+  ---
+  Full file listing (project files, excluding .venv / pycache /
+   .git / output)
+
+  .env                                        # API keys (not
+  committed)
+  .env.example
+  .gitignore
+  .python-version
+  CLAUDE.md
+  README.md
+  requirements.txt
+  pytest.ini
+  docs/brief.md
+  app/__init__.py
+  app/main.py
+  app/pipeline/__init__.py
+  app/pipeline/prompts/__init__.py
+  app/pipeline/prompts/evaluation.py
+  app/pipeline/prompts/extraction.py
+  app/pipeline/prompts/preprocessing.py
+  app/pipeline/stage0_url_parser.py
+  app/pipeline/stage1_preprocessor.py
+  app/pipeline/stage2_comment_fetcher.py
+  app/pipeline/stage3_threshold.py
+  app/pipeline/stage4_extraction.py
+  app/pipeline/stage5_aggregation.py
+  app/pipeline/stage6_sampling.py
+  app/pipeline/stage5_aggregation.py
+  app/pipeline/stage6_sampling.py
+  app/pipeline/stage7_evaluation.py
+  app/pipeline/stage8_confidence.py
+  app/pipeline/stage9_pdf.py
+  app/utils/__init__.py
+  app/utils/groq_client.py
+  app/utils/youtube_client.py
+  tests/__init__.py
+  tests/live/__init__.py
+  tests/live/test_checkpoint1.py
+  tests/live/test_checkpoint2.py
+  tests/live/test_checkpoint3.py
+  tests/live/test_checkpoint4.py
+  tests/local/test_extraction_retry.py       ← new (Session 5)
+  tests/local/test_fetch_cycle.py
+  tests/local/test_langdetect.py
+  tests/local/test_preprocessor_gates.py    ← new (Session 5)
+  tests/local/test_thresholds.py             ← new (Session 5)
+  tests/local/test_url_parser.py
+  output/                                    # Generated PDFs (not committed)
+
+  ---
+  Every passing test
+
+  Local (28 tests, all pass)
+
+  ┌────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────┐
+  │            File            │                                                                              Tests                                                                              │ Result │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+  │ test_extraction_retry.py   │ test_retry_succeeds_on_third_attempt, test_retry_exhausted_returns_none                                                                                         │ PASS   │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+  │ test_fetch_cycle.py        │ test_stops_at_100_english, test_stops_at_hard_cap, test_stops_at_no_next_page, test_threshold_full, test_threshold_degraded, test_threshold_reject              │ PASS   │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+  │ test_langdetect.py         │ test_english_returns_true, test_nonenglish_returns_false, test_empty_string_returns_false, test_emoji_only_returns_false, test_very_short_string_returns_false  │ PASS   │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+  │ test_preprocessor_gates.py │ test_not_promotion_returns_reject, test_low_confidence_with_candidates_returns_ask_user, test_low_confidence_no_candidates_returns_ask_user,                    │ PASS   │
+  │                            │ test_high_confidence_returns_proceed                                                                                                                            │        │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+  │ test_thresholds.py         │ test_50_returns_error, test_51_returns_degraded, test_100_returns_degraded, test_101_returns_full                                                               │ PASS   │
+  ├────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+  │ test_url_parser.py         │ test_watch_format, test_short_url_format, test_shorts_format, test_live_format, test_non_youtube_url_returns_none, test_empty_string_returns_none,              │ PASS   │
+  │                            │ test_missing_video_id_returns_none                                                                                                                              │        │
+  └────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┘
+
+  Live (4 smoke tests, all passed in prior sessions)
+
+  ┌─────────────────────┬─────────────┬──────────────────────────┐
+  │        File         │    Video    │          Result          │
+  ├─────────────────────┼─────────────┼──────────────────────────┤
+  │ test_checkpoint1.py │ rng_yUSwrgU │ PASS (Session 1)         │
+  ├─────────────────────┼─────────────┼──────────────────────────┤
+  │ test_checkpoint2.py │ rng_yUSwrgU │ PASS (Session 2, 31.20s) │
+  ├─────────────────────┼─────────────┼──────────────────────────┤
+  │ test_checkpoint3.py │ rng_yUSwrgU │ PASS (Session 3, 25.07s) │
+  ├─────────────────────┼─────────────┼──────────────────────────┤
+  │ test_checkpoint4.py │ rng_yUSwrgU │ PASS (Session 4, 23.49s) │
+  └─────────────────────┴─────────────┴──────────────────────────┘
+
+  ---
+  YouTube quota units consumed (Phase 2 total)
+
+  ┌────────────────────────────┬────────────────────────────────────┐
+  │          Session           │               Units                │
+  ├────────────────────────────┼────────────────────────────────────┤
+  │ Sessions 1–4 running total │ 41                                 │
+  ├────────────────────────────┼────────────────────────────────────┤
+  │ Session 5                  │ 0 (no live calls; hard constraint) │
+  ├────────────────────────────┼────────────────────────────────────┤
+  │ Phase 2 total              │ 41                                 │
+  └────────────────────────────┴────────────────────────────────────┘
+
+  ---
+  Full pipeline → readable PDF via POST /analyze
+
+  Yes. Checkpoint 4 smoke test produced output/report_rng_yUSwrgU_20260624_190619.pdf (134,138 bytes). Filename matches report_{video_id}_{timestamp}.pdf.
+
+  ---
+  Anything skipped
+
+  Nothing skipped. All Tasks 40–44 completed with done conditions met.
+
+  ---
+  Deviations from plan
+
+  - Task 43: Two functions had sparse docstrings (generate_pdf with 15 params had a 1-liner; fetch_and_filter_comments omitted the client parameter). Both were expanded to include purpose, parameters, and
+  return value. All other public functions already had adequate docstrings from prior sessions.
+  - Task 44: README already had a "Running the server" section with uvicorn. A new "How to run" section was added consolidating the uvicorn command, both env var names, and the
+  output/report_{video_id}_{YYYYMMDD_HHMMSS}.pdf filename format.
+
+  ---
+  Decision appended to CLAUDE.md
+
+  [Session 5 — Tasks 40–44] All local tests pass (28 total); generate_pdf and fetch_and_filter_comments docstrings expanded to include params and return; active phase advanced to Phase 3.
+
+  CLAUDE.md active phase updated to: Phase 3 — Testing and Prompt Refinement
+
+  ---
+  Open questions for Phase 3 planning
+
+  1. Prompt refinement scope: What failure rate in label_quality (Eval 1) triggers prompt revision? The brief notes ~15% as an engineering signal — is this a hard threshold or a guideline for Phase 3
+  testing?
+  2. Test budget for Phase 3: Phase 2 used 41 YouTube quota units and an unknown number of Groq tokens. Should Phase 3 live tests be capped at a specific number of full pipeline runs?
+  3. Evaluation model access: openai/gpt-oss-120b is listed as the evaluation model. Is this confirmed available on the project's Groq account for Phase 3 live tests?
+  4. Prompt files: Prompts in app/pipeline/prompts/ are Phase 2 drafts. Phase 3 refinement — are changes tracked via the decisions log, or will there be a separate prompt versioning approach?
+  5. main.py ask_user path: Stage 1's ask_user outcome returns a JSON response asking the user to specify a product. The POST /analyze endpoint does not yet handle the follow-up request with
+  primary_product specified. Is this a Phase 3 item or deferred?
+
+✻ Brewed for 5m 25s
