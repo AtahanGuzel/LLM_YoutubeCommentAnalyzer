@@ -58,18 +58,6 @@ def _format_aggregated(
     )
 
 
-def _extract_json(raw: str) -> str:
-    """Extract JSON object from raw text, handling markdown fences."""
-    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
-    if fence_match:
-        return fence_match.group(1).strip()
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start != -1 and end > start:
-        return raw[start:end + 1]
-    return raw
-
-
 async def evaluate(
     sample: list[dict],
     primary_product: str,
@@ -102,7 +90,28 @@ async def evaluate(
     )
 
     raw = completion.choices[0].message.content
-    raw = _extract_json(raw)
+    # Extract JSON from markdown code fences if present, same approach as stage4_extraction.py
+    fence_matches = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+    if fence_matches:
+        if len(fence_matches) == 1:
+            raw = fence_matches[0].strip()
+        else:
+            # Multiple fence blocks: merge all JSON objects into one dict
+            merged: dict = {}
+            for block in fence_matches:
+                try:
+                    block_data = json.loads(block.strip())
+                    if isinstance(block_data, dict):
+                        merged.update(block_data)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            raw = json.dumps(merged) if merged else fence_matches[0].strip()
+    else:
+        # Fall back to extracting the outermost JSON object from raw text
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end > start:
+            raw = raw[start:end + 1]
 
     try:
         data = parse_llm_json(raw)
