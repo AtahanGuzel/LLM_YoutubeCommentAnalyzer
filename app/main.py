@@ -1,5 +1,7 @@
 """FastAPI entry point for the YouTube Comment Analyzer service."""
 
+import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,13 +20,19 @@ from app.pipeline.stage5_aggregation import (
     count_competitors,
     rank_pain_points,
 )
-from app.pipeline.stage6_sampling import select_stratified_sample
-from app.pipeline.stage7_evaluation import run_evaluation
+from app.pipeline.stage6_sampling import select_random_sample, select_stratified_sample
+from app.pipeline.stage7_evaluation import (
+    evaluate_label_quality,
+    compute_eval1_failure_rate,
+    evaluate_output_quality,
+)
 from app.pipeline.stage8_confidence import compute_confidence, find_score_one_criteria
 from app.pipeline.stage9_pdf import generate_pdf
 from app.utils.youtube_client import fetch_video_metadata
 
 _OUTPUT_DIR = Path(__file__).parent.parent / "output"
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -80,14 +88,23 @@ async def run_pipeline(video_url: str, product_name: str | None = None) -> dict:
     pain_points = rank_pain_points(labeled_comments)
     competitors = count_competitors(labeled_comments)
 
-    # Stage 6 — stratified sample selection
-    sample = select_stratified_sample(labeled_comments, pain_points, competitors)
+    # Stage 6 — sample selection (two independent samples)
+    sample_a = select_random_sample(labeled_comments)
+    sample_b = select_stratified_sample(labeled_comments, pain_points, competitors)
 
-    # Stage 7 — evaluation (label_quality routed to log; output_quality returned)
-    eval_result = await run_evaluation(
-        sample, primary_product, sentiment_distribution, pain_points, competitors
-    )
-    output_quality = eval_result["output_quality"]
+    # Stage 7 — Eval 1: label quality audit (verdict array → log + failure rate)
+    verdicts = await evaluate_label_quality(sample_a, labeled_comments)
+    eval1_failure_rate = compute_eval1_failure_rate(verdicts)
+    logger.info("Eval 1 — verdicts: %s", json.dumps(verdicts))
+
+    # Stage 7 — Eval 2: output quality scoring (feeds PDF scorecard)
+    aggregated_output = {
+        "primary_product": primary_product,
+        "sentiment_distribution": sentiment_distribution,
+        "pain_points": pain_points,
+        "competitors": competitors,
+    }
+    output_quality = await evaluate_output_quality(sample_b, aggregated_output)
 
     # Stage 8 — confidence computation
     scores = [output_quality[c]["score"] for c in ("sentiment", "pain_points", "competitors")]
@@ -97,7 +114,7 @@ async def run_pipeline(video_url: str, product_name: str | None = None) -> dict:
         + sentiment_distribution["neutral"]
     )
     confidence_tier, confidence_warning = compute_confidence(
-        scores, relevant_count, processed_count, len(comments)
+        scores, relevant_count, processed_count, len(comments), eval1_failure_rate
     )
     score_one_warnings = find_score_one_criteria(output_quality)
 

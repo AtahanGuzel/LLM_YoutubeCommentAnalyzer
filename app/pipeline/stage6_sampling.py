@@ -81,3 +81,14 @@ def select_stratified_sample(
         add(comment)
 
     return sample
+
+
+def select_random_sample(labeled_comments: list[dict]) -> list[dict]:
+    """Return a random sample from labeled_comments for Eval 1 (label quality).
+
+    Sets random.seed(0) on each call for reproducibility. Selects without
+    replacement. Returns exactly 30 comments if len >= 30, otherwise all available.
+    """
+    random.seed(0)
+    n = min(30, len(labeled_comments))
+    return random.sample(labeled_comments, n)

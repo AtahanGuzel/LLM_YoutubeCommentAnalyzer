@@ -11,15 +11,18 @@ def compute_confidence(
     relevant_count: int,
     processed_count: int,
     total_fetched: int,
+    eval1_failure_rate: float,
 ) -> tuple[str, str | None]:
     """Return (confidence_tier, warning_message) based on scores and data quality.
 
     Check order (first match wins):
     1. loss_ratio > 0.25 → Low
     2. relevant_count < 30 → Low
-    3. avg >= 4.0 → High
-    4. avg >= 2.5 → Medium
-    5. else → Low
+    3. eval1_failure_rate > 0.25 → Low
+    4. avg >= 4.0 and eval1_failure_rate > 0.15 → Medium
+    5. avg >= 4.0 → High
+    6. avg >= 2.5 → Medium
+    7. else → Low
     """
     loss_ratio = (total_fetched - processed_count) / total_fetched
 
@@ -33,8 +36,19 @@ def compute_confidence(
     if relevant_count < 30:
         return ("Low", "Fewer than 30 comments were relevant to the target product.")
 
+    if eval1_failure_rate > 0.25:
+        return (
+            "Low",
+            "Extraction quality is low. Manual review of comment labels is recommended.",
+        )
+
     avg = sum(scores) / len(scores)
     if avg >= 4.0:
+        if eval1_failure_rate > 0.15:
+            return (
+                "Medium",
+                "Extraction quality is moderate. Results should be treated as directional.",
+            )
         return ("High", None)
     elif avg >= 2.5:
         return ("Medium", "Results should be treated as directional.")

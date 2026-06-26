@@ -19,5 +19,4 @@ def test_checkpoint1_full_pipeline():
     )
     assert result.get("primary_product"), "primary_product must be a non-empty string"
     assert result.get("video_title"), "video_title must be a non-empty string"
-    comments = result.get("comments", [])
-    assert len(comments) > 0, "comments list must be non-empty"
+    assert result.get("comments_fetched", 0) > 0, "comments_fetched must be non-zero"

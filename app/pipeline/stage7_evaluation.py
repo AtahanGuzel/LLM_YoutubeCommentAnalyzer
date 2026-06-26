@@ -13,10 +13,10 @@ from app.utils.groq_client import (
     EVALUATION_MODEL,
     get_groq_client,
     parse_llm_json,
-    validate_evaluation_response,
     LLMResponseParseError,
 )
-from app.pipeline.prompts.evaluation import EVALUATION_PROMPT
+from app.pipeline.prompts.eval1_label_quality import EVAL1_PROMPT
+from app.pipeline.prompts.eval2_output_quality import EVAL2_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -58,26 +58,104 @@ def _format_aggregated(
     )
 
 
-async def evaluate(
-    sample: list[dict],
-    primary_product: str,
-    sentiment_distribution: dict,
-    pain_points: list[dict],
-    competitors: list[dict],
-) -> dict:
-    """Call the evaluation model and return the full two-scorecard parsed dict.
+def _extract_json_from_raw(raw: str):
+    """Extract JSON text from raw LLM response, stripping markdown fences."""
+    fence_matches = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+    if fence_matches:
+        return fence_matches[0].strip()
+    start = raw.find("[") if raw.find("[") != -1 and (raw.find("{") == -1 or raw.find("[") < raw.find("{")) else raw.find("{")
+    if start == -1:
+        return raw
+    end_bracket = raw.rfind("]")
+    end_brace = raw.rfind("}")
+    end = max(end_bracket, end_brace)
+    if end > start:
+        return raw[start:end + 1]
+    return raw
 
-    The prompt places raw comment text + assigned labels BEFORE the aggregated output
-    to mitigate position bias. Raises EvaluationResponseError if the response cannot
-    be parsed or fails schema validation.
+
+async def evaluate_label_quality(
+    sample_a: list[dict],
+    labeled_comments: list[dict],
+) -> list[dict]:
+    """Call the evaluation model to audit label quality for Sample A.
+
+    Presents raw comment text before each assigned label to mitigate position
+    bias. Returns the full verdict array (list of dicts with comment_id, correct,
+    issue). Raises EvaluationResponseError on malformed output.
     """
-    formatted_sample = _format_sample(sample)
-    formatted_aggregated = _format_aggregated(
-        sentiment_distribution, pain_points, competitors
-    )
+    lines = []
+    for c in sample_a:
+        label = {
+            "comment_type": c.get("comment_type"),
+            "sentiment": c.get("sentiment"),
+            "pain_points": c.get("pain_points", []),
+            "competitor_mentions": c.get("competitor_mentions", []),
+        }
+        lines.append(
+            f"[{c.get('comment_id')}] {c.get('text', '')}\n"
+            f"  Label: {json.dumps(label)}"
+        )
+    formatted_sample = "\n\n".join(lines)
 
     prompt = (
-        EVALUATION_PROMPT
+        EVAL1_PROMPT
+        .replace("{n}", str(len(sample_a)))
+        .replace("{sampled_comments}", formatted_sample)
+    )
+
+    client = get_groq_client()
+    completion = client.chat.completions.create(
+        model=EVALUATION_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    raw = completion.choices[0].message.content
+    raw = _extract_json_from_raw(raw)
+
+    try:
+        data = parse_llm_json(raw)
+    except LLMResponseParseError as e:
+        raise EvaluationResponseError(
+            f"Eval 1 model returned unparseable JSON: {e}"
+        ) from e
+
+    if not isinstance(data, list) or not all(
+        isinstance(v, dict) and "comment_id" in v and "correct" in v and "issue" in v
+        for v in data
+    ):
+        raise EvaluationResponseError(
+            "Eval 1 response is not a valid verdict array."
+        )
+
+    logger.info("Eval 1 verdicts: %s", json.dumps(data))
+    return data
+
+
+def compute_eval1_failure_rate(verdicts: list[dict]) -> float:
+    """Return the fraction of verdicts where correct is False."""
+    failed = sum(1 for v in verdicts if not v["correct"])
+    return failed / len(verdicts)
+
+
+async def evaluate_output_quality(
+    sample_b: list[dict],
+    aggregated_output: dict,
+) -> dict:
+    """Call the evaluation model to score output quality using Sample B.
+
+    Presents raw comment text and assigned labels before the aggregated output
+    to mitigate position bias. Returns the output_quality dict (with sentiment,
+    pain_points, competitors sub-keys each containing evidence, gaps, score).
+    Raises EvaluationResponseError on malformed output.
+    """
+    formatted_sample = _format_sample(sample_b)
+    formatted_aggregated = json.dumps(aggregated_output, indent=2)
+
+    primary_product = aggregated_output.get("primary_product", "the target product")
+
+    prompt = (
+        EVAL2_PROMPT
         .replace("{primary_product}", primary_product)
         .replace("{sampled_comments}", formatted_sample)
         .replace("{aggregated_output}", formatted_aggregated)
@@ -90,67 +168,31 @@ async def evaluate(
     )
 
     raw = completion.choices[0].message.content
-    # Extract JSON from markdown code fences if present, same approach as stage4_extraction.py
-    fence_matches = re.findall(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
-    if fence_matches:
-        if len(fence_matches) == 1:
-            raw = fence_matches[0].strip()
-        else:
-            # Multiple fence blocks: merge all JSON objects into one dict
-            merged: dict = {}
-            for block in fence_matches:
-                try:
-                    block_data = json.loads(block.strip())
-                    if isinstance(block_data, dict):
-                        merged.update(block_data)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-            raw = json.dumps(merged) if merged else fence_matches[0].strip()
-    else:
-        # Fall back to extracting the outermost JSON object from raw text
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start != -1 and end > start:
-            raw = raw[start:end + 1]
+    raw = _extract_json_from_raw(raw)
 
     try:
         data = parse_llm_json(raw)
     except LLMResponseParseError as e:
         raise EvaluationResponseError(
-            f"Evaluation model returned unparseable JSON: {e}"
+            f"Eval 2 model returned unparseable JSON: {e}"
         ) from e
 
-    if not validate_evaluation_response(data):
+    if not isinstance(data, dict) or "output_quality" not in data:
         raise EvaluationResponseError(
-            "Evaluation response missing required label_quality or output_quality keys."
+            "Eval 2 response missing required output_quality key."
         )
+    oq = data["output_quality"]
+    for criterion in ("sentiment", "pain_points", "competitors"):
+        if criterion not in oq:
+            raise EvaluationResponseError(
+                f"Eval 2 output_quality missing criterion: {criterion}"
+            )
+        for field in ("evidence", "gaps", "score"):
+            if field not in oq[criterion]:
+                raise EvaluationResponseError(
+                    f"Eval 2 output_quality.{criterion} missing field: {field}"
+                )
 
-    return data
+    return oq
 
 
-def _log_label_quality(evaluation_result: dict) -> None:
-    """Write the label_quality block to the application log at INFO level."""
-    label_quality = evaluation_result.get("label_quality", {})
-    logger.info(
-        "Eval 1 — label_quality: %s",
-        json.dumps(label_quality),
-    )
-
-
-async def run_evaluation(
-    sample: list[dict],
-    primary_product: str,
-    sentiment_distribution: dict,
-    pain_points: list[dict],
-    competitors: list[dict],
-) -> dict:
-    """Run the full evaluation call and return only the output_quality scorecard.
-
-    label_quality is routed to the application log only and is not returned.
-    Returns {"output_quality": {sentiment: ..., pain_points: ..., competitors: ...}}.
-    """
-    result = await evaluate(
-        sample, primary_product, sentiment_distribution, pain_points, competitors
-    )
-    _log_label_quality(result)
-    return {"output_quality": result["output_quality"]}

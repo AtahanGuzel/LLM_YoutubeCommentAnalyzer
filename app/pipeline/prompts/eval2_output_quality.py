@@ -1,4 +1,4 @@
-EVALUATION_PROMPT = """You are evaluating the output quality of a comment analysis model.
+EVAL2_PROMPT = """You are evaluating the output quality of a comment analysis model.
 Present evidence before stating any score. Do not state scores until
 you have completed the evidence review for each criterion.
 
@@ -13,24 +13,6 @@ SCOUT 17B FINAL AGGREGATED OUTPUT:
 
 Output JSON only in the structure below.
 
-Eval 1 — Label quality (engineering diagnostic):
-{
-  "label_quality": {
-    "evaluated_count": <int>,
-    "passed": <int>,
-    "failed": <int>,
-    "failures": [
-      {
-        "comment_id": <int>,
-        "comment": "<comment text>",
-        "assigned_label": {"sentiment": "<value>", "competitors": [...]},
-        "issue": "<description>"
-      }
-    ]
-  }
-}
-
-Eval 2 — Output quality:
 {
   "output_quality": {
     "sentiment": {
@@ -83,6 +65,4 @@ Criterion 3 — Competitor identification accuracy:
 3 → One competitor visible in samples absent from output, or one included
     competitor weakly evidenced.
 2 → Multiple competitors missed or incorrectly included relative to samples.
-1 → Competitor output does not reflect sampled comment content.
-
-Combine both Eval 1 and Eval 2 into a single JSON response object."""
+1 → Competitor output does not reflect sampled comment content."""

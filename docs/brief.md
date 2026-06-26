@@ -1,5 +1,5 @@
 # Project Brief: LLM-Based YouTube Product Promotion Video Comment Analyzer
-**Version:** 2.0 — Revised  
+**Version:** 3.0 — Revised  
 **Scope:** v1 Physical Products Only  
 **Status:** Ready for Implementation
 
@@ -296,76 +296,111 @@ brand mention count 0      → report section shows:
 
 ---
 
-### Stage 6 — Stratified Sample Selection (for Evaluation)
+### Stage 6 — Sample Selection (Two Independent Samples)
 
-Before calling the gpt-oss-120b evaluator, a stratified sample is selected in code
-from the labeled comment dataset. This sample is the evidence the judge
-uses for both evaluation phases.
+Before calling the gpt-oss-120b evaluator, two independent samples are selected in code
+from the labeled comment dataset. Each sample serves a different evaluation call.
+The two samples are fully independent — no deduplication is applied between them.
+A comment may appear in both samples.
 
-**Sampling composition:**
+**Sample A — Random sample (for Eval 1 — label quality):**
+
+30 comments selected uniformly at random from the full labeled comment dataset.
+No stratification. The random sample gives an unbiased estimate of extraction
+model failure rate across the actual comment distribution.
+
+Random selection uses a fixed seed (seed=0) for reproducibility. Selection is without replacement — no comment appears twice within Sample A. If the total labeled comment set contains fewer than 30 comments, all available comments are taken.
+
+Size rationale: at the gpt-oss-120b TPM ceiling of 8,000 tokens, with ~87 tokens
+per comment (input + output) and ~400 tokens of prompt overhead, 30 comments
+fits comfortably within the per-call token budget while remaining readable
+in a single human review session.
+
+**Sample B — Stratified sample (for Eval 2 — output quality):**
+
 - 5 comments per sentiment bucket (positive, negative, neutral)
 - 3 comments per identified pain point (up to 5 pain points)
 - 3 comments per identified competitor
 - 5 random comments (sanity check)
 
-Typical total: ~35–50 comments. No hard cap needed — even at maximum scale
-(5 pain points, 5 competitors) the token budget stays within the gpt-oss-120b TPM ceiling.
+Typical total: ~35–50 comments. Deduplication applied within Sample B only
+by comment_id — no comment appears twice inside this sample.
+If a bucket has fewer comments than its target count, all available comments
+are taken with no padding.
 
-**Sample is used as evidence for both Eval 1 and Eval 2.**
+Sample B gives the judge coverage across every dimension it will score,
+which is why stratification is appropriate here but not for Eval 1.
 
 ---
 
-### Stage 7 — Evaluation (openai/gpt-oss-120b, Single Call)
-
-One gpt-oss-120b call performs both evaluations using the stratified sample as evidence.
-Raw comments are presented before the Scout 17B output to mitigate position bias
-(the judge anchors to what it sees first — raw evidence should come first).
-
-**Prompt structure:**
-```
-You are evaluating the output quality of a comment analysis model.
-Present evidence before stating any score. Do not state scores until
-you have completed the evidence review for each criterion.
-
-TASK: Analyze YouTube comments about {primary_product} for sentiment,
-      pain points, and competitor mentions.
-
-SAMPLED COMMENTS WITH SCOUT 17B LABELS:
-[comment_id, text, assigned label for each sample]
-
-SCOUT 17B FINAL AGGREGATED OUTPUT:
-[sentiment distribution, pain points list, competitors list]
-
-Output JSON only in the structure below.
-```
-
-**Two-scorecard output structure:**
-
-**Eval 1 — Label quality (engineering diagnostic, backend log only):**
+**Eval 1 output schema:**
 
 ```json
-{
-  "label_quality": {
-    "evaluated_count": 35,
-    "passed": 31,
-    "failed": 4,
-    "failures": [
-      {
-        "comment_id": 12,
-        "comment": "switched from Sony, never going back",
-        "assigned_label": {"sentiment": "negative", "competitors": []},
-        "issue": "competitor Sony missed, sentiment ambiguous without context"
-      }
-    ]
+[
+  {
+    "comment_id": "001",
+    "correct": true,
+    "issue": null
+  },
+  {
+    "comment_id": "012",
+    "correct": false,
+    "issue": "competitor Sony missed; comment says 'switched from Sony' but competitor_mentions is empty"
   }
-}
+]
 ```
+
+**Eval 1 failure rate computation (code):**
+
+Function name: `compute_eval1_failure_rate`
+
+```python
+def compute_eval1_failure_rate(verdicts: list[dict]) -> float:
+    failed = sum(1 for v in verdicts if not v["correct"])
+    return failed / len(verdicts)
+```
+
+**Eval 1 output routing:**
+- Full verdict array (all 30 comments, correct and incorrect) → backend log at INFO level
+- Failure rate float → passed to Stage 8 confidence computation via `compute_eval1_failure_rate`
+- Failure patterns (issue strings grouped by type) → backend log
+- Nothing from Eval 1 appears in the PDF
 
 Engineering interpretation: failure rate above ~15% indicates the extraction
 prompt needs revision. Failure patterns clustered on a specific label type
 (all competitor misses, all sentiment ambiguities) indicate targeted prompt issues.
 
-**Eval 2 — Output quality (feeds PDF):**
+---
+
+**Eval 2 Call — Output quality (feeds PDF)**
+
+Function name: `evaluate_output_quality`
+
+Uses Sample B (stratified sample). The judge receives the stratified sample
+with raw text and assigned labels, followed by the final aggregated output,
+and scores three criteria on a 1–5 scale.
+
+Raw comments are presented before the Scout 17B output to mitigate position bias.
+
+**Eval 2 prompt structure:**
+
+You are evaluating the output quality of a comment analysis model.
+
+Present evidence before stating any score. Do not state scores until
+
+you have completed the evidence review for each criterion.
+TASK: Analyze YouTube comments about {primary_product} for sentiment,
+
+pain points, and competitor mentions.
+SAMPLED COMMENTS WITH SCOUT 17B LABELS:
+
+[comment_id, text, assigned label for each sample]
+SCOUT 17B FINAL AGGREGATED OUTPUT:
+
+[sentiment distribution, pain points list, competitors list]
+Output JSON only in the structure below.
+
+**Eval 2 output schema:**
 
 ```json
 {
@@ -392,55 +427,76 @@ prompt needs revision. Failure patterns clustered on a specific label type
 **Anchored rubric provided to the judge:**
 
 *Criterion 1 — Sentiment classification accuracy:*
-```
 5 → Assigned sentiment is clearly supported by the majority of sampled comments.
-    No meaningful contradicting evidence present.
+
+No meaningful contradicting evidence present.
+
 4 → Well supported. A small number of samples suggest mild ambiguity but
-    don't contradict the overall classification.
+
+don't contradict the overall classification.
+
 3 → Partially supported. Roughly equal evidence exists for an alternative
-    classification.
+
+classification.
+
 2 → Weakly supported. Stronger evidence in samples points toward a different
-    classification.
+
+classification.
+
 1 → Directly contradicts the majority of sampled comments.
-```
+
 
 *Criterion 2 — Pain point identification accuracy:*
-```
 5 → All identified pain points are directly evidenced in samples.
-    No recurring problem pattern in samples was missed.
+
+No recurring problem pattern in samples was missed.
+
 4 → Well evidenced. One minor issue is slightly mischaracterized or a
-    low-signal pattern was missed.
+
+low-signal pattern was missed.
+
 3 → Most pain points valid but one is not well supported, or one clearly
-    recurring issue is absent.
+
+recurring issue is absent.
+
 2 → Multiple pain points weakly supported or a high-frequency problem
-    visible in samples does not appear in output.
+
+visible in samples does not appear in output.
+
 1 → Identified pain points do not reflect sampled comment content.
-```
 
 *Criterion 3 — Competitor identification accuracy:*
-```
 5 → All competitors in sampled comments correctly captured.
-    Threshold rule correctly applied.
+
+Threshold rule correctly applied.
+
 4 → Correctly identified with minor characterization variance.
-    No missed competitor from samples.
+
+No missed competitor from samples.
+
 3 → One competitor visible in samples absent from output, or one included
-    competitor weakly evidenced.
+
+competitor weakly evidenced.
+
 2 → Multiple competitors missed or incorrectly included relative to samples.
+
 1 → Competitor output does not reflect sampled comment content.
-```
 
 ---
 
+
 ### Stage 8 — Confidence Computation (Code)
 
-Computed from Eval 2 scores plus data quality signals.
+Computed from Eval 2 scores, Eval 1 failure rate, and data quality signals.
+Check order is fixed — earlier checks short-circuit the function.
 
 ```python
 def compute_confidence(
     scores: list[int],
     relevant_count: int,
     processed_count: int,
-    total_fetched: int
+    total_fetched: int,
+    eval1_failure_rate: float
 ) -> tuple[str, str | None]:
 
     loss_ratio = (total_fetched - processed_count) / total_fetched
@@ -452,8 +508,16 @@ def compute_confidence(
     if relevant_count < 30:
         return "Low", "Fewer than 30 comments were relevant to the target product."
 
+    if eval1_failure_rate > 0.25:
+        return "Low", "Extraction quality is low. \
+                        Manual review of comment labels is recommended."
+
     avg = sum(scores) / len(scores)
+
     if avg >= 4.0:
+        if eval1_failure_rate > 0.15:
+            return "Medium", "Extraction quality is moderate. \
+                               Results should be treated as directional."
         return "High", None
     elif avg >= 2.5:
         return "Medium", "Results should be treated as directional."
@@ -461,7 +525,14 @@ def compute_confidence(
         return "Low", "Manual review of comments is recommended."
 ```
 
-Additionally, any single criterion scoring 1 triggers a per-section warning
+**Eval 1 failure rate thresholds:**
+```
+failure_rate > 0.25  → confidence forced to Low regardless of Eval 2 scores
+failure_rate > 0.15  → confidence capped at Medium (High becomes Medium)
+failure_rate ≤ 0.15  → no cap applied, Eval 2 scores drive confidence normally
+```
+
+Additionally, any single Eval 2 criterion scoring 1 triggers a per-section warning
 in the PDF regardless of overall average.
 
 ---
@@ -537,6 +608,8 @@ Competitors   [✓ / ⚠]  {evidence sentence from judge}
 ```
 
 Raw numeric scores are not shown in the PDF. They are logged to the backend only.
+Eval 1 results (verdict array, failure rate, failure patterns) are never shown
+in the PDF. They are logged to the backend only.
 
 **Footer:**
 ```
@@ -575,13 +648,21 @@ Code aggregation
   ├─ pain points ranked by weighted score (log likes + count)
   └─ competitors by raw count, ≥10 threshold
         ↓
-Stratified sample selection (code)
+Two independent sample selections (code)
+  ├─ Sample A: 30 random comments → Eval 1
+  └─ Sample B: stratified sample → Eval 2
         ↓
-gpt-oss-120b evaluation call
-  ├─ Eval 1: label quality → backend log
-  └─ Eval 2: output quality → PDF scorecard
+gpt-oss-120b Eval 1 call (Sample A)
+  └─ verdict per comment (correct/false + issue) → backend log
+  └─ failure rate float → Stage 8
+        ↓
+gpt-oss-120b Eval 2 call (Sample B)
+  └─ output quality scores + evidence → Stage 8 + PDF scorecard
         ↓
 Confidence computation (code)
+  ├─ data quality signals (loss ratio, relevant count)
+  ├─ Eval 1 failure rate (caps confidence at Medium or Low)
+  └─ Eval 2 scores (drive tier when no cap applies)
         ↓
 PDF generation (ReportLab + Matplotlib/Seaborn)
         ↓
@@ -605,10 +686,14 @@ Return PDF to user via FastAPI file response
 
 | Call | Model | Tokens | TPM ceiling | Est. wait |
 |---|---|---|---|---|
-| Pre-processing | openai/gpt-oss-120b | ~300 | 8,000 | negligible |
+| Pre-processing | openai/gpt-oss-120b | ~400 | 8,000 | negligible |
 | Per extraction chunk | meta-llama/llama-4-scout-17b-16e-instruct | ~3,500 | 30,000 | negligible |
 | 8 chunks total | meta-llama/llama-4-scout-17b-16e-instruct | ~28,000 | 30,000 | ~1 min at free tier |
-| Evaluation | openai/gpt-oss-120b | ~3,500–4,700 | 8,000 | negligible |
+| Eval 1 (30 random comments) | openai/gpt-oss-120b | ~3,000 | 8,000 | negligible |
+| Eval 2 (stratified sample) | openai/gpt-oss-120b | ~3,000–3,700 | 8,000 | negligible |
+
+Note: All three gpt-oss-120b calls are sequential. Each individual call fits within
+the 8,000 TPM ceiling. Total gpt-oss-120b tokens per pipeline run: ~6,400–7,100.
 
 ---
 
