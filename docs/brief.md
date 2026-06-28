@@ -1,5 +1,5 @@
 # Project Brief: LLM-Based YouTube Product Promotion Video Comment Analyzer
-**Version:** 3.0 — Revised  
+**Version:** 4.0 — Revised  
 **Scope:** v1 Physical Products Only  
 **Status:** Ready for Implementation
 
@@ -296,58 +296,75 @@ brand mention count 0      → report section shows:
 
 ---
 
-### Stage 6 — Sample Selection (Two Independent Samples)
+### Stage 6 — Evaluation Calls (No Sampling)
 
-Before calling the gpt-oss-120b evaluator, two independent samples are selected in code
-from the labeled comment dataset. Each sample serves a different evaluation call.
-The two samples are fully independent — no deduplication is applied between them.
-A comment may appear in both samples.
+Sampling has been removed from the pipeline. Both evaluation calls operate
+directly on the full labeled comment dataset. No sample selection step exists.
 
-**Sample A — Random sample (for Eval 1 — label quality):**
-
-30 comments selected uniformly at random from the full labeled comment dataset.
-No stratification. The random sample gives an unbiased estimate of extraction
-model failure rate across the actual comment distribution.
-
-Random selection uses a fixed seed (seed=0) for reproducibility. Selection is without replacement — no comment appears twice within Sample A. If the total labeled comment set contains fewer than 30 comments, all available comments are taken.
-
-Size rationale: at the gpt-oss-120b TPM ceiling of 8,000 tokens, with ~87 tokens
-per comment (input + output) and ~400 tokens of prompt overhead, 30 comments
-fits comfortably within the per-call token budget while remaining readable
-in a single human review session.
-
-**Sample B — Stratified sample (for Eval 2 — output quality):**
-
-- 5 comments per sentiment bucket (positive, negative, neutral)
-- 3 comments per identified pain point (up to 5 pain points)
-- 3 comments per identified competitor
-- 5 random comments (sanity check)
-
-Typical total: ~35–50 comments. Deduplication applied within Sample B only
-by comment_id — no comment appears twice inside this sample.
-If a bucket has fewer comments than its target count, all available comments
-are taken with no padding.
-
-Sample B gives the judge coverage across every dimension it will score,
-which is why stratification is appropriate here but not for Eval 1.
+Eval 1 receives all labeled comments (up to 100). Eval 2 receives Eval 1 output —
+it is not an independent pipeline call against raw comments.
 
 ---
 
-**Eval 1 output schema:**
+### Stage 7 — Evaluation
+
+**Eval 1 Call — Label quality (engineering diagnostic)**
+
+Function name: `evaluate_label_quality`
+
+Receives all labeled comments from the extraction stage. Calls gpt-oss-120b
+to audit every comment's assigned labels against the raw comment text.
+
+Token usage: ~9,100 tokens per call. Exceeds the 8,000 TPM ceiling by ~1,100 tokens.
+Retry logic and exponential backoff handle the rate limit hit gracefully.
+Expected wait: ~1 minute.
+
+**Eval 1 prompt structure:**
+
+```
+You are auditing the label quality of a comment extraction model.
+The model was asked to analyze comments about: {primary_product}
+
+For each comment below, check whether the assigned labels are correct.
+Identify the first field that is wrong, if any. Do not evaluate downstream
+fields if comment_type is incorrect.
+
+Output JSON only — one entry per comment.
+```
+
+**Eval 1 output schema (per comment):**
 
 ```json
 [
   {
     "comment_id": "001",
-    "correct": true,
+    "issue_field": null,
     "issue": null
   },
   {
     "comment_id": "012",
-    "correct": false,
-    "issue": "competitor Sony missed; comment says 'switched from Sony' but competitor_mentions is empty"
+    "issue_field": "competitor_mentions",
+    "issue": "comment says 'switched from Sony' but competitor_mentions is empty"
   }
 ]
+```
+
+Field rules:
+- `issue_field`: `comment_type` | `sentiment` | `pain_points` | `competitor_mentions` | `null`
+- `issue`: one sentence description of the problem, or `null` if correct
+- Single issue per comment — hierarchical check order: `comment_type` first,
+  downstream fields only evaluated if `comment_type` is correct
+
+**Eval 1 aggregate summary (computed by judge as part of same response):**
+
+```json
+{
+  "comment_type_failures": 3,
+  "sentiment_failures": 2,
+  "pain_points_failures": 4,
+  "competitor_mentions_failures": 1,
+  "total_failure_rate": 0.10
+}
 ```
 
 **Eval 1 failure rate computation (code):**
@@ -355,144 +372,83 @@ which is why stratification is appropriate here but not for Eval 1.
 Function name: `compute_eval1_failure_rate`
 
 ```python
-def compute_eval1_failure_rate(verdicts: list[dict]) -> float:
-    failed = sum(1 for v in verdicts if not v["correct"])
-    return failed / len(verdicts)
+def compute_eval1_failure_rate(aggregate: dict) -> float:
+    return aggregate["total_failure_rate"]
 ```
 
 **Eval 1 output routing:**
-- Full verdict array (all 30 comments, correct and incorrect) → backend log at INFO level
-- Failure rate float → passed to Stage 8 confidence computation via `compute_eval1_failure_rate`
-- Failure patterns (issue strings grouped by type) → backend log
-- Nothing from Eval 1 appears in the PDF
+- Full verdict array (all comments, correct and incorrect) → backend log at INFO level
+- Aggregate summary → passed to Eval 2 for narrative generation
+- Failed cases only (non-null issue_field entries) → passed to Eval 2
+- Total failure rate float → passed to Stage 8 confidence computation
+- Nothing from Eval 1 appears in the PDF directly
 
 Engineering interpretation: failure rate above ~15% indicates the extraction
-prompt needs revision. Failure patterns clustered on a specific label type
-(all competitor misses, all sentiment ambiguities) indicate targeted prompt issues.
+prompt needs revision. Failures clustered on a specific field indicate targeted
+prompt issues.
 
 ---
 
-**Eval 2 Call — Output quality (feeds PDF)**
+**Eval 2 Call — Narrative generation (feeds PDF)**
 
 Function name: `evaluate_output_quality`
 
-Uses Sample B (stratified sample). The judge receives the stratified sample
-with raw text and assigned labels, followed by the final aggregated output,
-and scores three criteria on a 1–5 scale.
+Eval 2 is a narrative generation call, not a scoring call. It receives Eval 1
+aggregate summary and the failed cases list. It generates business-language
+summary sentences for each criterion that appear in the PDF scorecard.
 
-Raw comments are presented before the Scout 17B output to mitigate position bias.
+No rubric. No 1–5 scores. No sample of raw comments.
 
-**Eval 2 prompt structure:**
+**Eval 2 input:**
 
-You are evaluating the output quality of a comment analysis model.
+```
+Eval 1 aggregate:
+  comment_type failures: {n}
+  sentiment failures: {n}
+  pain_points failures: {n}
+  competitor_mentions failures: {n}
+  total failure rate: {%}
 
-Present evidence before stating any score. Do not state scores until
+Failed cases:
+  [comment_id, issue_field, issue_string per failed comment]
+```
 
-you have completed the evidence review for each criterion.
-TASK: Analyze YouTube comments about {primary_product} for sentiment,
-
-pain points, and competitor mentions.
-SAMPLED COMMENTS WITH SCOUT 17B LABELS:
-
-[comment_id, text, assigned label for each sample]
-SCOUT 17B FINAL AGGREGATED OUTPUT:
-
-[sentiment distribution, pain points list, competitors list]
-Output JSON only in the structure below.
+Only failed cases are sent — correct verdicts are excluded.
+Typical token cost: ~500–1,000 tokens per call. Well within TPM ceiling.
 
 **Eval 2 output schema:**
 
 ```json
 {
-  "output_quality": {
-    "sentiment": {
-      "evidence": "string — specific observations from samples",
-      "gaps": "string — contradictions or missed patterns, or null",
-      "score": 1
-    },
-    "pain_points": {
-      "evidence": "string",
-      "gaps": "string or null",
-      "score": 1
-    },
-    "competitors": {
-      "evidence": "string",
-      "gaps": "string or null",
-      "score": 1
-    }
-  }
+  "sentiment_summary": "business language sentence",
+  "pain_points_summary": "business language sentence",
+  "competitor_summary": "business language sentence",
+  "confidence_insight": "overall pattern observation if meaningful, or null"
 }
 ```
 
-**Anchored rubric provided to the judge:**
+Summary sentences are written for a non-technical brand manager audience.
+They describe what the failure patterns mean for result reliability,
+not what went wrong technically.
 
-*Criterion 1 — Sentiment classification accuracy:*
-5 → Assigned sentiment is clearly supported by the majority of sampled comments.
+Example outputs:
+- ✓ "Sentiment classification is well supported across the analyzed comments."
+- ⚠ "Some competitor references may have been missed — findings should be treated as directional."
+- ⚠ "Pain point analysis is based on limited negative comments — interpret with caution."
 
-No meaningful contradicting evidence present.
-
-4 → Well supported. A small number of samples suggest mild ambiguity but
-
-don't contradict the overall classification.
-
-3 → Partially supported. Roughly equal evidence exists for an alternative
-
-classification.
-
-2 → Weakly supported. Stronger evidence in samples points toward a different
-
-classification.
-
-1 → Directly contradicts the majority of sampled comments.
-
-
-*Criterion 2 — Pain point identification accuracy:*
-5 → All identified pain points are directly evidenced in samples.
-
-No recurring problem pattern in samples was missed.
-
-4 → Well evidenced. One minor issue is slightly mischaracterized or a
-
-low-signal pattern was missed.
-
-3 → Most pain points valid but one is not well supported, or one clearly
-
-recurring issue is absent.
-
-2 → Multiple pain points weakly supported or a high-frequency problem
-
-visible in samples does not appear in output.
-
-1 → Identified pain points do not reflect sampled comment content.
-
-*Criterion 3 — Competitor identification accuracy:*
-5 → All competitors in sampled comments correctly captured.
-
-Threshold rule correctly applied.
-
-4 → Correctly identified with minor characterization variance.
-
-No missed competitor from samples.
-
-3 → One competitor visible in samples absent from output, or one included
-
-competitor weakly evidenced.
-
-2 → Multiple competitors missed or incorrectly included relative to samples.
-
-1 → Competitor output does not reflect sampled comment content.
+`confidence_insight` is populated only when failure patterns across fields
+share a common root cause worth surfacing. Otherwise null.
 
 ---
 
-
 ### Stage 8 — Confidence Computation (Code)
 
-Computed from Eval 2 scores, Eval 1 failure rate, and data quality signals.
+Computed from Eval 1 failure rate and data quality signals.
+Eval 2 scores are not used — Eval 2 is narrative only.
 Check order is fixed — earlier checks short-circuit the function.
 
 ```python
 def compute_confidence(
-    scores: list[int],
     relevant_count: int,
     processed_count: int,
     total_fetched: int,
@@ -508,32 +464,26 @@ def compute_confidence(
     if relevant_count < 30:
         return "Low", "Fewer than 30 comments were relevant to the target product."
 
-    if eval1_failure_rate > 0.25:
+    if eval1_failure_rate > 0.20:
         return "Low", "Extraction quality is low. \
                         Manual review of comment labels is recommended."
 
-    avg = sum(scores) / len(scores)
-
-    if avg >= 4.0:
-        if eval1_failure_rate > 0.15:
-            return "Medium", "Extraction quality is moderate. \
-                               Results should be treated as directional."
-        return "High", None
-    elif avg >= 2.5:
+    if eval1_failure_rate > 0.10:
         return "Medium", "Results should be treated as directional."
-    else:
-        return "Low", "Manual review of comments is recommended."
+
+    return "High", None
 ```
 
 **Eval 1 failure rate thresholds:**
+
 ```
-failure_rate > 0.25  → confidence forced to Low regardless of Eval 2 scores
-failure_rate > 0.15  → confidence capped at Medium (High becomes Medium)
-failure_rate ≤ 0.15  → no cap applied, Eval 2 scores drive confidence normally
+failure_rate > 0.20  → confidence forced to Low
+failure_rate > 0.10  → confidence Medium
+failure_rate ≤ 0.10  → confidence High
 ```
 
-Additionally, any single Eval 2 criterion scoring 1 triggers a per-section warning
-in the PDF regardless of overall average.
+Additionally, any single field with a failure rate above 10% triggers a
+per-section warning (⚠) in the PDF scorecard regardless of overall confidence tier.
 
 ---
 
@@ -600,16 +550,18 @@ Low    → red banner:    "Analysis confidence is low.
 Overall confidence: [HIGH / MEDIUM / LOW]  (large, prominent)
 
 Per-criterion breakdown:
-Sentiment     [✓ / ⚠]  {evidence sentence from judge}
-Pain points   [✓ / ⚠]  {evidence sentence from judge}
-Competitors   [✓ / ⚠]  {evidence sentence from judge}
+Sentiment     [✓ / ⚠]  {sentiment_summary from Eval 2}
+Pain points   [✓ / ⚠]  {pain_points_summary from Eval 2}
+Competitors   [✓ / ⚠]  {competitor_summary from Eval 2}
 
-✓ = score 4–5    ⚠ = score 1–3
+✓ = field failure rate ≤ 10%
+⚠ = field failure rate > 10%
 ```
 
-Raw numeric scores are not shown in the PDF. They are logged to the backend only.
-Eval 1 results (verdict array, failure rate, failure patterns) are never shown
-in the PDF. They are logged to the backend only.
+Summary sentences come from Eval 2 narrative output.
+Raw failure rates and numeric scores are not shown in the PDF.
+They are logged to the backend only.
+Eval 1 verdict array is never shown in the PDF. It is logged to the backend only.
 
 **Footer:**
 ```
@@ -648,21 +600,17 @@ Code aggregation
   ├─ pain points ranked by weighted score (log likes + count)
   └─ competitors by raw count, ≥10 threshold
         ↓
-Two independent sample selections (code)
-  ├─ Sample A: 30 random comments → Eval 1
-  └─ Sample B: stratified sample → Eval 2
+gpt-oss-120b Eval 1 call (all labeled comments, up to 100)
+  ├─ per-comment verdict (issue_field + issue) → backend log
+  ├─ aggregate summary (failures per field + total rate) → Eval 2 + Stage 8
+  └─ failed cases list → Eval 2
         ↓
-gpt-oss-120b Eval 1 call (Sample A)
-  └─ verdict per comment (correct/false + issue) → backend log
-  └─ failure rate float → Stage 8
-        ↓
-gpt-oss-120b Eval 2 call (Sample B)
-  └─ output quality scores + evidence → Stage 8 + PDF scorecard
+gpt-oss-120b Eval 2 call (Eval 1 aggregate + failed cases)
+  └─ narrative summaries per field + confidence insight → PDF scorecard
         ↓
 Confidence computation (code)
   ├─ data quality signals (loss ratio, relevant count)
-  ├─ Eval 1 failure rate (caps confidence at Medium or Low)
-  └─ Eval 2 scores (drive tier when no cap applies)
+  └─ Eval 1 failure rate (drives confidence tier)
         ↓
 PDF generation (ReportLab + Matplotlib/Seaborn)
         ↓
@@ -689,11 +637,12 @@ Return PDF to user via FastAPI file response
 | Pre-processing | openai/gpt-oss-120b | ~400 | 8,000 | negligible |
 | Per extraction chunk | meta-llama/llama-4-scout-17b-16e-instruct | ~3,500 | 30,000 | negligible |
 | 8 chunks total | meta-llama/llama-4-scout-17b-16e-instruct | ~28,000 | 30,000 | ~1 min at free tier |
-| Eval 1 (30 random comments) | openai/gpt-oss-120b | ~3,000 | 8,000 | negligible |
-| Eval 2 (stratified sample) | openai/gpt-oss-120b | ~3,000–3,700 | 8,000 | negligible |
+| Eval 1 (all labeled comments, up to 100) | openai/gpt-oss-120b | ~9,100 | 8,000 | ~1 min |
+| Eval 2 (narrative from Eval 1 failures) | openai/gpt-oss-120b | ~500–1,000 | 8,000 | negligible |
 
-Note: All three gpt-oss-120b calls are sequential. Each individual call fits within
-the 8,000 TPM ceiling. Total gpt-oss-120b tokens per pipeline run: ~6,400–7,100.
+Note: All three gpt-oss-120b calls are sequential. Eval 1 consistently exceeds
+the 8,000 TPM ceiling by ~1,100 tokens — retry logic handles this. Eval 2 is
+well within the ceiling. Total gpt-oss-120b tokens per pipeline run: ~10,000–10,500.
 
 ---
 
